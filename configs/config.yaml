@@ -1,0 +1,60 @@
+# OAST 平台示例配置
+# 纯内存模式，重启清空。
+
+server:
+  dns:
+    listen: ":53"
+    protocols: ["udp", "tcp"]   # 可选子集
+    aaaa_enabled: false         # AAAA 应答开关，默认关（NOTIMP，减少 IPv6 噪音）
+    record_noise: false         # 是否记录 NS/SOA 元查询，默认关（列表只留真实回调）
+  http:
+    listen: ":80"
+    tls_listen: ":443"
+    tls_cert: ""                # 留空则不启用 HTTPS
+    tls_key: ""
+    body_read_limit: 1048576    # 读取上限 1MB
+  admin:
+    listen: ":8443"
+    enable_pprof: false         # 生产关闭
+
+storage:
+  mode: "memory"               # memory | sqlite（sqlite 落盘，重启不丢）
+  sqlite:
+    path: "data/oast.db"       # 相对路径基于可执行文件目录
+    max_file_mb: 512           # db 文件硬上限（SQLITE_FULL 兜底）
+  max_memory_mb: 256           # 进程内存软上限（GOMEMLIMIT）
+  max_interactions: 100000     # memory 模式全局上限，FIFO 淘汰
+  max_per_token: 10000
+  body_truncate_bytes: 512     # 采集边缘截断，两模式共用
+  retention_ttl: "12h"         # 超过自动清理
+
+auth:
+  jwt_secret: "change-me-in-prod"
+  access_ttl: "15m"
+  refresh_ttl: "168h"
+  bcrypt_cost: 12
+
+token:
+  default_ttl: "168h"          # 7 天
+
+domains:
+  - name: "oast.example.com"
+    response_ip: "127.0.0.1"
+    txt_payload: "oast-v1"
+    ns_records: ["ns1.example.com", "ns2.example.com"]
+    soa_primary_ns: "ns1.example.com"
+    soa_email: "admin.example.com"
+
+event_bus:
+  buffer: 4096
+  workers: 4
+  batch_size: 64
+  flush_interval: "50ms"
+
+log:
+  level: "info"                 # debug | info | warn | error
+  format: "json"                # json | text
+
+bootstrap:
+  admin_username: "admin"
+  admin_password: "change-me"   # 启动后强制改密

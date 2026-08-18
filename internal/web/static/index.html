@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OAST — OOB Application Security Testing</title>
+<script>
+// Apply saved theme before paint to avoid flash.
+(function () {
+  try {
+    var t = localStorage.getItem('oast-theme');
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  } catch (e) {}
+})();
+</script>
+<style>
+  :root,
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-top: #0b0f17;
+    --bg-bottom: #080b12;
+    --bg-dot: rgba(148, 163, 184, 0.05);
+    --glow: rgba(59, 130, 246, 0.09);
+    --surface: #12171f;
+    --surface-2: #1a212c;
+    --surface-3: #222b38;
+    --border: #232c38;
+    --border-strong: #36414f;
+    --text: #e6edf3;
+    --text-muted: #94a3b8;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-soft: rgba(59, 130, 246, 0.14);
+    --success: #34d399;
+    --success-soft: rgba(52, 211, 153, 0.14);
+    --warn: #fbbf24;
+    --warn-soft: rgba(251, 191, 36, 0.14);
+    --danger: #f85149;
+    --danger-soft: rgba(248, 81, 73, 0.14);
+    --danger-hover: #da3633;
+    --btn: #232b38;
+    --btn-hover: #2e3947;
+    --btn-border: #3b4757;
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    --mono: 'SFMono-Regular', 'Cascadia Code', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg-top: #f8fafc;
+    --bg-bottom: #eef2f7;
+    --bg-dot: rgba(15, 23, 42, 0.055);
+    --glow: rgba(9, 105, 218, 0.06);
+    --surface: #ffffff;
+    --surface-2: #f1f5f9;
+    --surface-3: #e9eef5;
+    --border: #d8dfe9;
+    --border-strong: #b6c2d1;
+    --text: #0f172a;
+    --text-muted: #475569;
+    --accent: #0969da;
+    --accent-hover: #1a7ff3;
+    --accent-soft: rgba(9, 105, 218, 0.1);
+    --success: #1a7f37;
+    --success-soft: rgba(26, 127, 55, 0.1);
+    --warn: #9a6700;
+    --warn-soft: rgba(154, 103, 0, 0.1);
+    --danger: #cf222e;
+    --danger-soft: rgba(207, 34, 46, 0.1);
+    --danger-hover: #b6242f;
+    --btn: #ffffff;
+    --btn-hover: #eef1f5;
+    --btn-border: #c9d1d9;
+    --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme]) {
+      color-scheme: light;
+      --bg-top: #f8fafc;
+      --bg-bottom: #eef2f7;
+      --bg-dot: rgba(15, 23, 42, 0.055);
+      --glow: rgba(9, 105, 218, 0.06);
+      --surface: #ffffff;
+      --surface-2: #f1f5f9;
+      --surface-3: #e9eef5;
+      --border: #d8dfe9;
+      --border-strong: #b6c2d1;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --accent: #0969da;
+      --accent-hover: #1a7ff3;
+      --accent-soft: rgba(9, 105, 218, 0.1);
+      --success: #1a7f37;
+      --success-soft: rgba(26, 127, 55, 0.1);
+      --warn: #9a6700;
+      --warn-soft: rgba(154, 103, 0, 0.1);
+      --danger: #cf222e;
+      --danger-soft: rgba(207, 34, 46, 0.1);
+      --danger-hover: #b6242f;
+      --btn: #ffffff;
+      --btn-hover: #eef1f5;
+      --btn-border: #c9d1d9;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    min-height: 100vh;
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', Helvetica, Arial, sans-serif;
+    font-size: 14px; line-height: 1.6;
+    background:
+      radial-gradient(1100px 420px at 78% -8%, var(--glow), transparent 70%),
+      radial-gradient(900px 380px at -8% -12%, rgba(52, 211, 153, 0.05), transparent 70%),
+      radial-gradient(circle, var(--bg-dot) 1px, transparent 1px) 0 0 / 22px 22px,
+      linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+    background-attachment: fixed;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button { font-family: inherit; cursor: pointer; }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  header {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 22px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 10px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  .brand h1 {
+    margin: 0; font-size: 17px; font-weight: 700; letter-spacing: 0.5px;
+    font-family: var(--mono);
+    background: linear-gradient(90deg, var(--text) 60%, var(--accent));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; color: var(--text);
+  }
+  .brand .meta { color: var(--text-muted); font-size: 12px; font-family: var(--mono); }
+  header .actions { display: flex; align-items: center; gap: 10px; }
+  .status { color: var(--text-muted); font-size: 11px; font-family: var(--mono); display: flex; align-items: center; gap: 6px; }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success); }
+  header button, .btn {
+    background: var(--btn); color: var(--text); border: 1px solid var(--btn-border);
+    border-radius: 6px; padding: 5px 12px; font-size: 12.5px;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s, filter 0.15s;
+  }
+  header button:hover, .btn:hover { background: var(--btn-hover); color: var(--text); }
+  .btn-primary {
+    background: var(--accent); color: #fff; border: 1px solid transparent;
+  }
+  .btn-primary:hover { background: var(--accent-hover); color: #fff; }
+  .btn-danger {
+    background: var(--danger); color: #fff; border: 1px solid transparent;
+  }
+  .btn-danger:hover { background: var(--danger-hover); color: #fff; }
+  .icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; padding: 0; border-radius: 6px;
+  }
+  .icon-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 24px 20px 40px; }
+
+  /* ---- login ---- */
+  .login {
+    max-width: 360px; margin: 9vh auto; padding: 28px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--shadow);
+  }
+  .login h2 { margin: 0 0 6px; font-size: 18px; font-family: var(--mono); letter-spacing: 0.5px; }
+  .login .sub { margin: 0 0 20px; color: var(--text-muted); font-size: 12px; }
+  .login label { display: block; margin-bottom: 6px; font-size: 12px; color: var(--text-muted); }
+  .login input {
+    width: 100%; padding: 8px 12px; background: var(--bg-bottom); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; font-size: 14px; font-family: var(--mono);
+  }
+  .login input:focus { border-color: var(--accent); outline: none; }
+  .login button { width: 100%; margin-top: 14px; padding: 9px; }
+  .login .err { color: var(--danger); font-size: 12px; margin-top: 10px; }
+
+  /* ---- cards ---- */
+  .cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .card {
+    position: relative; overflow: hidden;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 16px;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+  .card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--accent); opacity: 0.7;
+  }
+  .card:nth-child(2)::before { background: var(--success); }
+  .card:nth-child(3)::before { background: var(--accent); }
+  .card:nth-child(4)::before { background: var(--warn); }
+  .card:nth-child(5)::before { background: var(--accent); }
+  .card:nth-child(6)::before { background: var(--success); }
+  .card .label { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
+  .card .value { color: var(--text); font-size: 24px; font-weight: 600; margin-top: 2px; font-family: var(--mono); }
+
+  /* ---- panels ---- */
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 20px; overflow: hidden;
+  }
+  .panel-head {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 10px;
+    background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  }
+  .panel-head h2 { margin: 0; font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .panel-head h2 .kbd { color: var(--text-muted); font-size: 11px; font-family: var(--mono); font-weight: 400; }
+  .panel-body { padding: 14px 16px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .toolbar input, .toolbar select {
+    background: var(--bg-bottom); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 9px; font-size: 12.5px; font-family: var(--mono);
+  }
+  .toolbar input:focus, .toolbar select:focus { border-color: var(--accent); outline: none; }
+
+  /* ---- tokens ---- */
+  .token-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .token-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 7px; padding: 4px 6px 4px 10px;
+    font-family: var(--mono); font-size: 12.5px; cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+  }
+  .token-chip:hover { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .token-chip .st { width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex: none; }
+  .token-chip .st.expired { background: var(--warn); }
+  .token-chip .st.revoked { background: var(--danger); }
+  .token-chip .val { font-weight: 600; color: var(--text); }
+  .token-chip .domain { color: var(--text-muted); margin-left: 2px; }
+  .token-chip .act {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; border-radius: 4px; color: var(--text-muted);
+    border: none; background: transparent; padding: 0;
+    transition: color 0.15s, background-color 0.15s;
+  }
+  .token-chip .act:hover { color: var(--accent); background: var(--accent-soft); }
+  .token-chip .act.del:hover { color: var(--danger); background: var(--danger-soft); }
+  .token-chip .act svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---- table ---- */
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+  th {
+    color: var(--text-muted); font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    border-bottom-color: var(--border-strong); white-space: nowrap;
+  }
+  tbody tr { transition: background-color 0.15s; }
+  tbody tr:hover { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .badge {
+    display:inline-block; padding:0 6px; margin-left:4px;
+    border-radius:8px; background: var(--accent); color:#fff;
+    font-size:11px; line-height:16px; vertical-align:middle;
+  }
+  .dim { color: var(--muted); font-size:11px; }
+  td.mono { font-family: var(--mono); font-size: 12px; }
+  td .row-actions { display: inline-flex; gap: 6px; }
+  td .row-actions button { padding: 3px 10px; font-size: 12px; }
+
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  .tag.dns { background: var(--accent-soft); color: var(--accent); }
+  .tag.http { background: var(--success-soft); color: var(--success); }
+
+  .empty { padding: 40px 0; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+  .pagination {
+    display: flex; gap: 8px; align-items: center; justify-content: flex-end;
+    padding: 10px 16px; border-top: 1px solid var(--border);
+  }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .pagination button:disabled:hover { background: var(--btn); }
+  #pageInfo { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+
+  .detail {
+    font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-all;
+    background: var(--bg-bottom); border: 1px solid var(--border);
+    padding: 12px; border-radius: 8px; max-height: 400px; overflow: auto;
+  }
+
+  /* ---- toast ---- */
+  .toast {
+    position: fixed; bottom: 20px; right: 20px; z-index: 100;
+    background: var(--surface-3); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 8px;
+    padding: 10px 16px; font-size: 13px; font-family: var(--mono);
+    box-shadow: var(--shadow);
+    opacity: 0; transform: translateY(6px);
+    transition: opacity 0.2s, transform 0.2s; pointer-events: none;
+    max-width: 80vw; word-break: break-all;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ---- theme toggle icons ---- */
+  [data-theme="dark"] .icon-sun, [data-theme="light"] .icon-moon { display: none; }
+  .icon-sun, .icon-moon { display: block; }
+
+  .footer {
+    text-align: center; color: var(--text-muted); font-size: 12px;
+    padding: 18px 0 28px; border-top: 1px solid var(--border); margin-top: 10px;
+  }
+
+  @media (max-width: 700px) {
+    .cards { grid-template-columns: 1fr 1fr; }
+    table { font-size: 11.5px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <h1>OAST</h1>
+    <span class="meta" id="meta">OOB Application Security Testing</span>
+  </div>
+  <div class="actions">
+    <span class="status" id="autoStatus"></span>
+    <button class="icon-btn" id="themeToggle" type="button" title="切换深浅色模式" aria-label="切换深浅色模式">
+      <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <form id="logoutForm" method="POST" action="/logout" style="display:none;">
+      <button type="submit">退出</button>
+    </form>
+  </div>
+</header>
+<main id="app">
+  <!-- login view -->
+  <div class="login" id="loginView" style="display:none;">
+    <h2>访问密码</h2>
+    <p class="sub">OAST admin 需要密码才能访问</p>
+    <form id="loginForm">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="访问密码" autocomplete="current-password" autofocus>
+      <button type="submit" class="btn-primary">进入</button>
+      <div class="err" id="loginErr"></div>
+    </form>
+  </div>
+
+  <!-- dashboard view -->
+  <div id="dashView" style="display:none;">
+    <div class="cards" id="cards"></div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Tokens <span class="kbd">· 你的回调子域名</span></h2>
+        <div class="toolbar">
+          <select id="tokenDomain" title="选择回调域名" style="min-width:190px;"></select>
+          <button class="btn-primary" id="newTokenBtn">+ 生成新 Token</button>
+          <button id="refreshBtn">刷新</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div class="token-list" id="tokenList">
+          <div class="empty">暂无 token，点击「生成新 Token」开始</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Interactions <span class="kbd">· 回调记录</span></h2>
+        <div class="toolbar">
+          <input type="text" id="fToken" placeholder="筛选 token" style="width:150px;">
+          <select id="fType">
+            <option value="">全部类型</option>
+            <option value="dns">DNS</option>
+            <option value="http">HTTP</option>
+          </select>
+          <input type="text" id="fSrc" placeholder="来源 IP" style="width:130px;">
+          <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;">
+            <input type="checkbox" id="cbGroup" checked> 合并相同查询
+          </label>
+          <button id="applyFilter">应用</button>
+          <button id="ivRefreshBtn">⟳ 手动刷新</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="ivTable">
+          <thead>
+            <tr>
+              <th style="width:150px;">时间</th>
+              <th style="width:64px;">类型</th>
+              <th>Token</th>
+              <th>来源</th>
+              <th style="width:70px;">Q 类型</th>
+              <th>内容</th>
+              <th style="width:110px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="ivBody">
+            <tr><td colspan="7" class="empty">暂无数据</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button id="prevBtn">‹ 上一页</button>
+        <span id="pageInfo">0 / 0</span>
+        <button id="nextBtn">下一页 ›</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<div class="footer">
+  Powered by fhertyu · <a href="https://github.com/fhertyu/oast-go" target="_blank">OAST</a> · 数据保留 <span id="retention">48h</span>
+</div>
+
+<script>
+let PAGE = 0, PAGESIZE = 50, TOTAL = 0, AUTOTIMER = null, NEEDS_AUTH = false;
+const $ = id => document.getElementById(id);
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (r.status === 401) { location.reload(); throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error(await r.text());
+  if (r.headers.get('content-type')?.includes('application/json')) return r.json();
+  return r.text();
+}
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function fmtTime(s) {
+  const d = new Date(s);
+  return d.toLocaleString('zh-CN', { hour12: false }).replace(/\//g, '-');
+}
+
+function esc(s) { return String(s || '').replace(/[&<>"']/g, c => ({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+}[c])); }
+
+/* ---- theme ---- */
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('oast-theme', t); } catch (e) {}
+}
+function toggleTheme() {
+  const cur = document.documentElement.dataset.theme ||
+    (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+
+async function init() {
+  try {
+    const s = await api('/api/stats');
+    NEEDS_AUTH = false;
+    showDash(s);
+  } catch (e) {
+    if (e.message === 'unauthorized') return;
+    // First-time or auth required
+    try {
+      const c = await api('/api/config');
+      NEEDS_AUTH = c.auth_required;
+      if (NEEDS_AUTH) showLogin();
+      else showDash({stats:{interactions:0,dns_events:0,http_events:0,tokens:0}});
+    } catch (e2) {
+      showLogin();
+    }
+  }
+}
+
+function showLogin() {
+  $('loginView').style.display = 'block';
+  $('dashView').style.display = 'none';
+}
+
+function showDash(stats) {
+  $('loginView').style.display = 'none';
+  $('dashView').style.display = 'block';
+  $('logoutForm').style.display = NEEDS_AUTH ? 'inline' : 'none';
+  renderStats(stats);
+  loadTokens();
+  loadDomains();
+  loadInteractions();
+  startAuto();
+}
+
+function renderStats(s) {
+  const cards = [
+    {label:'总回调', value:s.interactions || 0},
+    {label:'DNS', value:s.dns_events || 0},
+    {label:'HTTP', value:s.http_events || 0},
+    {label:'活跃 Token', value:s.active_tokens || 0},
+    {label:'总 Token', value:s.tokens || 0},
+    {label:'域名', value:s.domains || 0},
+  ];
+  $('cards').innerHTML = cards.map(c =>
+    `<div class="card"><div class="label">${c.label}</div><div class="value">${c.value}</div></div>`
+  ).join('');
+}
+
+async function loadDomains() {
+  try {
+    const r = await api('/api/domains');
+    const sel = $('tokenDomain');
+    if (!r.domains || r.domains.length === 0) {
+      sel.innerHTML = '<option value="">无域名</option>';
+      return;
+    }
+    const cur = sel.value;
+    sel.innerHTML = r.domains.map(d =>
+      `<option value="${esc(d.name)}">${esc(d.name)}</option>`
+    ).join('');
+    if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+  } catch (e) { toast('加载域名失败'); }
+}
+
+async function loadTokens() {
+  try {
+    const r = await api('/api/tokens');
+    const tl = $('tokenList');
+    if (!r.tokens || r.tokens.length === 0) {
+      tl.innerHTML = '<div class="empty">暂无 token，点击「生成新 Token」开始</div>';
+      return;
+    }
+    tl.innerHTML = r.tokens.map(t => {
+      const st = (t.status || 'active') === 'active'
+        ? '<span class="st"></span>'
+        : `<span class="st ${esc(t.status)}"></span>`;
+      return `<span class="token-chip" onclick="copyToken('${t.value}','${esc(t.domain)}')" title="点击复制完整子域名">
+        ${st}
+        <span class="val">${esc(t.value)}</span>
+        <span class="domain">@${esc(t.domain)}</span>
+        <button class="act" onclick="event.stopPropagation();copyToken('${t.value}','${esc(t.domain)}')" title="复制" aria-label="复制域名">
+          <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+        </button>
+        <button class="act del" onclick="event.stopPropagation();delToken('${t.value}')" title="删除" aria-label="删除 token">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </span>`;
+    }).join('');
+  } catch (e) { toast('加载 token 失败'); }
+}
+
+async function loadInteractions() {
+  try {
+    const params = new URLSearchParams({
+      limit: PAGESIZE, offset: PAGE * PAGESIZE,
+    });
+    const fT = $('fToken').value.trim(); if (fT) params.set('token', fT);
+    const fType = $('fType').value; if (fType) params.set('type', fType);
+    const fSrc = $('fSrc').value.trim(); if (fSrc) params.set('src_ip', fSrc);
+    const r = await api('/api/interactions?' + params);
+    TOTAL = r.total;
+    renderInteractions(r.items);
+    renderPagination();
+  } catch (e) { toast('加载回调失败'); }
+}
+
+function renderInteractions(items) {
+  const tb = $('ivBody');
+  if (!items || items.length === 0) {
+    tb.innerHTML = '<tr><td colspan="7" class="empty">暂无数据</td></tr>';
+    return;
+  }
+  let rows = items;
+  if ($('cbGroup').checked) {
+    // 合并相同查询：同类型+同内容视为一条（DNS 递归器集群常从多个出口重复查询）。
+    const groups = new Map();
+    for (const iv of items) {
+      const key = `${iv.type}|${iv.qtype || iv.method}|${iv.qname || iv.path}`;
+      const g = groups.get(key);
+      if (g) { g.count++; g.sources.add(iv.src_ip); }
+      else groups.set(key, { iv, count: 1, sources: new Set([iv.src_ip]) });
+    }
+    rows = [...groups.values()];
+  }
+  tb.innerHTML = rows.map(r => {
+    const iv = r.iv;
+    const tag = iv.type === 'dns' ? '<span class="tag dns">DNS</span>' : '<span class="tag http">HTTP</span>';
+    const qtype = iv.type === 'dns' ? esc(iv.qtype) : esc(iv.method || '-');
+    const content = iv.type === 'dns'
+      ? esc(iv.qname)
+      : `${esc(iv.path)}${iv.query?'?'+esc(iv.query):''}`;
+    const src = `${esc(iv.src_ip)}${iv.src_port?':'+iv.src_port:''}`;
+    const badge = r.count > 1 ? ` <span class="badge" title="同一查询重复 ${r.count} 次">×${r.count}</span>` : '';
+    const srcs = r.count > 1 && r.sources.size > 1
+      ? `<span title="来源 IP: ${[...r.sources].join(', ')}">${src} <span class="dim">(+${r.sources.size-1})</span></span>`
+      : src;
+    return `<tr>
+      <td class="mono">${fmtTime(iv.created_at)}</td>
+      <td>${tag}</td>
+      <td class="mono">${esc(iv.token_value || '-')}${badge}</td>
+      <td class="mono">${srcs}</td>
+      <td><span class="tag">${qtype}</span></td>
+      <td class="mono">${content}</td>
+      <td><div class="row-actions">
+        <button onclick="viewDetail(${iv.id})">详情</button>
+        <button class="btn-danger" onclick="delInteraction(${iv.id})">删除</button>
+      </div></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPagination() {
+  const pages = Math.max(1, Math.ceil(TOTAL / PAGESIZE));
+  $('pageInfo').textContent = `${PAGE+1} / ${pages}  (共 ${TOTAL})`;
+  $('prevBtn').disabled = PAGE === 0;
+  $('nextBtn').disabled = PAGE >= pages - 1;
+}
+
+async function viewDetail(id) {
+  try {
+    const r = await api('/api/interactions/' + id);
+    const lines = Object.entries(r).map(([k,v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v, null, 2) : v}`).join('\n');
+    alert(lines);
+  } catch (e) { toast('加载详情失败'); }
+}
+
+async function copyToken(value, domain) {
+  const full = `${value}.${domain}`;
+  let ok = false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(full);
+      ok = true;
+    }
+  } catch (e) {}
+  if (!ok) {
+    // Fallback for plain http:// (clipboard API is HTTPS/localhost only).
+    const ta = document.createElement('textarea');
+    ta.value = full;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+  }
+  if (ok) toast('已复制: ' + full);
+  else toast('复制失败，请手动复制: ' + full);
+}
+
+async function delToken(value) {
+  if (!confirm(`删除 token ${value}?`)) return;
+  try {
+    await api('/api/tokens/' + value, { method: 'DELETE' });
+    toast('已删除');
+    loadTokens();
+  } catch (e) { toast('删除失败'); }
+}
+
+async function delInteraction(id) {
+  if (!confirm('删除这条回调记录 (id=' + id + ')?')) return;
+  try {
+    await api('/api/interactions/' + id, { method: 'DELETE' });
+    toast('已删除');
+    loadInteractions();
+  } catch (e) { toast('删除失败: ' + e.message); }
+}
+
+async function newToken() {
+  try {
+    const dom = $('tokenDomain').value;
+    const url = dom ? '/api/tokens?domain=' + encodeURIComponent(dom) : '/api/tokens';
+    const r = await api(url, { method: 'POST' });
+    toast('已生成: ' + r.value + '.' + r.domain);
+    loadTokens();
+  } catch (e) { toast('生成失败: ' + e.message); }
+}
+
+function startAuto() {
+  if (AUTOTIMER) return;
+  AUTOTIMER = setInterval(async () => {
+    try {
+      const s = await api('/api/stats');
+      renderStats(s);
+      // Only auto-refresh page 1 if no filters
+      if (!$('fToken').value && !$('fType').value && !$('fSrc').value && PAGE === 0) {
+        loadInteractions();
+      }
+    } catch (e) {}
+  }, 5000);
+  $('autoStatus').innerHTML = '<span class="dot"></span> 自动刷新 5s';
+}
+
+// Event handlers
+$('loginForm')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  $('loginErr').textContent = '';
+  try {
+    await api('/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'password=' + encodeURIComponent($('password').value)
+    });
+    location.reload();
+  } catch (err) {
+    $('loginErr').textContent = '密码错误';
+  }
+});
+
+$('newTokenBtn')?.addEventListener('click', newToken);
+$('refreshBtn')?.addEventListener('click', () => { loadTokens(); loadDomains(); loadInteractions(); });
+$('ivRefreshBtn')?.addEventListener('click', () => { loadInteractions(); });
+$('applyFilter')?.addEventListener('click', () => { PAGE = 0; loadInteractions(); });
+$('prevBtn')?.addEventListener('click', () => { if (PAGE > 0) { PAGE--; loadInteractions(); } });
+$('nextBtn')?.addEventListener('click', () => { PAGE++; loadInteractions(); });
+$('themeToggle')?.addEventListener('click', toggleTheme);
+
+init();
+</script>
+</body>
+</html>
