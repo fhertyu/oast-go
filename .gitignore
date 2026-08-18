@@ -14,11 +14,5 @@ data/
 # 运行时配置（含自动生成的真实密钥，绝不入库）
 /config.yaml
 
-# 本地工具/编辑器
-.workbuddy/
-.idea/
-.vscode/
-*.swp
-
 # 日志
 *.log
