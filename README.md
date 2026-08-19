@@ -119,7 +119,7 @@ Description=OAST OOB Testing Platform
 After=network-online.target
 
 [Service]
-User=oast
+User=oast   #注意此处的用户，需要创建对应的用户和组，并修改权限
 WorkingDirectory=/opt/oast
 ExecStart=/opt/oast/oast
 AmbientCapabilities=CAP_NET_BIND_SERVICE   # 非 root 绑 53/80
