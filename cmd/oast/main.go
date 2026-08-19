@@ -235,8 +235,15 @@ func bootstrapDomains(ctx context.Context, log *slog.Logger, cfg *config.Config,
 			SOAEmail:     dc.SOAEmail,
 		}
 		if err := store.CreateDomain(ctx, d); err != nil {
-			log.Error("create domain", "name", dc.Name, "err", err)
-			continue
+			// Domain already exists (e.g. SQLite restart): load it from
+			// the store so the in-memory trie stays in sync.
+			existing, err2 := store.GetDomainByName(ctx, dc.Name)
+			if err2 != nil {
+				log.Error("domain bootstrap failed", "name", dc.Name,
+					"create_err", err, "lookup_err", err2)
+				continue
+			}
+			d = existing
 		}
 		mgr.Add(d)
 		log.Info("domain registered", "name", d.Name, "ip", d.ResponseIP)
