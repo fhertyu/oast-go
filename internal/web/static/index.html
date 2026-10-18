@@ -276,7 +276,7 @@
     border-radius:8px; background: var(--accent); color:#fff;
     font-size:11px; line-height:16px; vertical-align:middle;
   }
-  .dim { color: var(--muted); font-size:11px; }
+  .dim { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
   td.mono { font-family: var(--mono); font-size: 12px; }
   td .row-actions { display: inline-flex; gap: 6px; }
   td .row-actions button { padding: 3px 10px; font-size: 12px; }
@@ -391,7 +391,7 @@
           </select>
           <input type="text" id="fSrc" placeholder="来源 IP" style="width:130px;">
           <label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;">
-            <input type="checkbox" id="cbGroup" checked> 合并相同查询
+            <input type="checkbox" id="cbGroup" checked title="同一条查询的多次回调合并为一行；每个来源 IP 及其命中次数都会保留"> 合并相同查询
           </label>
           <button id="applyFilter">应用</button>
           <button id="ivRefreshBtn">⟳ 手动刷新</button>
@@ -407,11 +407,12 @@
               <th>来源</th>
               <th style="width:70px;">Q 类型</th>
               <th>内容</th>
+              <th style="width:96px;">次数</th>
               <th style="width:110px;">操作</th>
             </tr>
           </thead>
           <tbody id="ivBody">
-            <tr><td colspan="7" class="empty">暂无数据</td></tr>
+            <tr><td colspan="8" class="empty">暂无数据</td></tr>
           </tbody>
         </table>
       </div>
@@ -431,7 +432,7 @@
 </div>
 
 <script>
-let PAGE = 0, PAGESIZE = 50, TOTAL = 0, AUTOTIMER = null, NEEDS_AUTH = false;
+let PAGE = 0, PAGESIZE = 50, TOTAL = 0, AUTOTIMER = null, NEEDS_AUTH = false, LAST_ROWS = [];
 const $ = id => document.getElementById(id);
 
 async function api(path, opts = {}) {
@@ -574,46 +575,108 @@ async function loadInteractions() {
   } catch (e) { toast('加载回调失败'); }
 }
 
+// tsOf returns created_at as epoch millis (0 when unparsable).
+function tsOf(iv) { const t = Date.parse(iv.created_at); return isNaN(t) ? 0 : t; }
+
+// groupInteractions merges interactions that describe the SAME callback
+// (type + token + qtype/method + qname/path). Nothing is thrown away: each
+// group keeps every hit, every source IP with its own hit count, and the
+// first/last hit time — so a second resolver IP can never be overwritten by
+// the newest one (the old bug: only the latest src_ip was displayed).
+function groupInteractions(items) {
+  const groups = new Map();
+  for (const iv of items) {
+    const key = `${iv.type}|${iv.token_value || ''}|${iv.qtype || iv.method || ''}|${iv.qname || iv.path || ''}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { first: iv, last: iv, count: 0, sources: new Map(), events: [] };
+      groups.set(key, g);
+    }
+    g.count++;
+    g.events.push(iv);
+    if (tsOf(iv) < tsOf(g.first) || (tsOf(iv) === tsOf(g.first) && iv.id < g.first.id)) g.first = iv;
+    if (tsOf(iv) > tsOf(g.last) || (tsOf(iv) === tsOf(g.last) && iv.id > g.last.id)) g.last = iv;
+    const s = g.sources.get(iv.src_ip);
+    if (s) {
+      s.count++;
+      if (tsOf(iv) < tsOf(s.first)) s.first = iv;
+      if (tsOf(iv) > tsOf(s.last)) s.last = iv;
+    } else {
+      g.sources.set(iv.src_ip, { ip: iv.src_ip, count: 1, first: iv, last: iv });
+    }
+  }
+  return [...groups.values()].map(g => ({
+    rep: g.last,
+    first: g.first,
+    last: g.last,
+    count: g.count,
+    // 按首次命中时间排序：先到的来源 IP 排在前面，不掩盖"第一次 IP1、第二次 IP2"。
+    sources: [...g.sources.values()].sort((a, b) => tsOf(a.first) - tsOf(b.first) || a.ip.localeCompare(b.ip)),
+    events: g.events,
+  }));
+}
+
 function renderInteractions(items) {
   const tb = $('ivBody');
   if (!items || items.length === 0) {
-    tb.innerHTML = '<tr><td colspan="7" class="empty">暂无数据</td></tr>';
+    LAST_ROWS = [];
+    tb.innerHTML = '<tr><td colspan="8" class="empty">暂无数据</td></tr>';
     return;
   }
-  let rows = items;
+  let rows;
   if ($('cbGroup').checked) {
-    // 合并相同查询：同类型+同内容视为一条（DNS 递归器集群常从多个出口重复查询）。
-    const groups = new Map();
-    for (const iv of items) {
-      const key = `${iv.type}|${iv.qtype || iv.method}|${iv.qname || iv.path}`;
-      const g = groups.get(key);
-      if (g) { g.count++; g.sources.add(iv.src_ip); }
-      else groups.set(key, { iv, count: 1, sources: new Set([iv.src_ip]) });
-    }
-    rows = [...groups.values()];
+    // 合并相同查询：同一条查询的多次回调（DNS 递归器集群常从多个出口重复查询）
+    // 合并为一行，但每个来源 IP 及其命中次数全部保留。
+    rows = groupInteractions(items);
+  } else {
+    // 不合并：每条回调单独一行。
+    rows = items.map(iv => ({
+      rep: iv, first: iv, last: iv, count: 1,
+      sources: [{ ip: iv.src_ip, count: 1 }], events: [iv],
+    }));
   }
-  tb.innerHTML = rows.map(r => {
-    const iv = r.iv;
+  LAST_ROWS = rows;
+  tb.innerHTML = rows.map((r, idx) => {
+    const iv = r.rep;
     const tag = iv.type === 'dns' ? '<span class="tag dns">DNS</span>' : '<span class="tag http">HTTP</span>';
     const qtype = iv.type === 'dns' ? esc(iv.qtype) : esc(iv.method || '-');
     const content = iv.type === 'dns'
       ? esc(iv.qname)
       : `${esc(iv.path)}${iv.query?'?'+esc(iv.query):''}`;
-    const src = `${esc(iv.src_ip)}${iv.src_port?':'+iv.src_port:''}`;
-    const badge = r.count > 1 ? ` <span class="badge" title="同一查询重复 ${r.count} 次">×${r.count}</span>` : '';
-    const srcs = r.count > 1 && r.sources.size > 1
-      ? `<span title="来源 IP: ${[...r.sources].join(', ')}">${src} <span class="dim">(+${r.sources.size-1})</span></span>`
-      : src;
+    // 合并行显示首次命中时间 + 最近一次命中时间。
+    const timeCell = r.count > 1
+      ? `<div>${fmtTime(r.first.created_at)}</div><div class="dim" title="最近一次命中">最近 ${fmtTime(r.last.created_at)}</div>`
+      : `<div>${fmtTime(iv.created_at)}</div>`;
+    const countCell = r.count > 1
+      ? `<span class="badge" title="共 ${r.count} 次命中，来自 ${r.sources.length} 个来源 IP">×${r.count}</span>` +
+        (r.sources.length > 1 ? `<div class="dim">${r.sources.length} 个来源 IP</div>` : '')
+      : '<span class="dim">×1</span>';
+    // 来源列：合并行把每个来源 IP 和各自的命中次数全部列出来。
+    let srcCell;
+    if (r.count === 1) {
+      srcCell = `${esc(iv.src_ip)}${iv.src_port?':'+iv.src_port:''}`;
+    } else if (r.sources.length === 1) {
+      srcCell = `${esc(r.sources[0].ip)} <span class="dim">×${r.sources[0].count}</span>`;
+    } else {
+      const shown = r.sources.slice(0, 4);
+      const rest = r.sources.length - shown.length;
+      const all = r.sources.map(s => `${s.ip} ×${s.count}`).join(', ');
+      srcCell = `<span title="来源 IP: ${esc(all)}">` +
+        shown.map(s => `${esc(s.ip)} <span class="dim">×${s.count}</span>`).join('<br>') +
+        (rest > 0 ? `<br><span class="dim">+${rest} 个 IP</span>` : '') +
+        '</span>';
+    }
     return `<tr>
-      <td class="mono">${fmtTime(iv.created_at)}</td>
+      <td class="mono">${timeCell}</td>
       <td>${tag}</td>
-      <td class="mono">${esc(iv.token_value || '-')}${badge}</td>
-      <td class="mono">${srcs}</td>
+      <td class="mono">${esc(iv.token_value || '-')}</td>
+      <td class="mono">${srcCell}</td>
       <td><span class="tag">${qtype}</span></td>
       <td class="mono">${content}</td>
+      <td class="mono">${countCell}</td>
       <td><div class="row-actions">
-        <button onclick="viewDetail(${iv.id})">详情</button>
-        <button class="btn-danger" onclick="delInteraction(${iv.id})">删除</button>
+        <button onclick="viewDetail(${idx})">详情</button>
+        <button class="btn-danger" onclick="delGroup(${idx})">删除</button>
       </div></td>
     </tr>`;
   }).join('');
@@ -626,10 +689,22 @@ function renderPagination() {
   $('nextBtn').disabled = PAGE >= pages - 1;
 }
 
-async function viewDetail(id) {
+// viewDetail renders one table row. Merged rows first show the representative
+// callback in full, then the complete hit list (time + source IP) they merged,
+// so no occurrence is lost behind the newest one.
+async function viewDetail(rowIdx) {
+  const row = LAST_ROWS[rowIdx];
+  if (!row) return;
   try {
-    const r = await api('/api/interactions/' + id);
-    const lines = Object.entries(r).map(([k,v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v, null, 2) : v}`).join('\n');
+    const r = await api('/api/interactions/' + row.rep.id);
+    let lines = Object.entries(r).map(([k,v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v, null, 2) : v}`).join('\n');
+    if (row.count > 1) {
+      const hits = row.events
+        .slice()
+        .sort((a, b) => tsOf(a) - tsOf(b) || a.id - b.id)
+        .map(e => `  ${fmtTime(e.created_at)}  ${e.src_ip}${e.src_port ? ':' + e.src_port : ''}`);
+      lines += `\n\n--- 本条查询共命中 ${row.count} 次，来自 ${row.sources.length} 个来源 IP（按时间先后）---\n${hits.join('\n')}`;
+    }
     alert(lines);
   } catch (e) { toast('加载详情失败'); }
 }
@@ -667,10 +742,19 @@ async function delToken(value) {
   } catch (e) { toast('删除失败'); }
 }
 
-async function delInteraction(id) {
-  if (!confirm('删除这条回调记录 (id=' + id + ')?')) return;
+// delGroup deletes every interaction of a row. A merged row can hold N hits
+// (the same query seen from several resolver egress IPs), and they should all
+// disappear together instead of leaving a stale ×N-1 row behind.
+async function delGroup(rowIdx) {
+  const row = LAST_ROWS[rowIdx];
+  if (!row) return;
+  const ids = row.events.map(e => e.id);
+  const msg = ids.length > 1
+    ? `删除这 ${ids.length} 条回调记录（同一条查询的多次命中）?`
+    : `删除这条回调记录 (id=${ids[0]})?`;
+  if (!confirm(msg)) return;
   try {
-    await api('/api/interactions/' + id, { method: 'DELETE' });
+    for (const id of ids) await api('/api/interactions/' + id, { method: 'DELETE' });
     toast('已删除');
     loadInteractions();
   } catch (e) { toast('删除失败: ' + e.message); }
